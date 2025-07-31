@@ -1,6 +1,12 @@
 library(SingleCellExperiment)
 library(scuttle)
 # 定义要加载的包向量
+# assays （主数据）、 
+# colData （单元元数据）、 
+# rowData / rowRanges （特征元数据）
+# metadata 槽（ SingleCellExperiment 其他）
+#reducedDims 插槽专门设计用于存储通过 PCA 和  t-SNE 等方法获得的主数据的降维表示
+
 BiocManager::install(c('scuttle', 'scran', 'scater', 'uwot', 'rtracklayer'))
 getwd()
 setwd("D:/REXC/ex")
@@ -96,5 +102,54 @@ names(gene.data)
 # 当你用 gene.data["ENSMUSG00000000001"] 查找时，就像直接按标签找文件，无需打开每个文件查看里面的 gene_id 内容
 names(gene.data) <- gene.data$gene_id
 
-#提取gene.data获取这些 “gene_” 开头列的位置索引，而非直接提取列名和数据
+#在gene.data获取这些 “gene_” 开头列的位置索引，而非直接提取列名和数据
 is.gene.related <- grep("gene_", colnames(mcols(gene.data)))
+#筛选
+mcols(gene.data) <- mcols(gene.data)[, is.gene.related]
+colnames(mcols(gene.data))
+#将gene.data通过基因id与rowRang关联 rownames(),实际上就是为rowranges添加细胞的gene.data的数据
+rowRanges(sce) <- gene.data[rownames(sce)]
+rowRanges(sce)[1:10]
+
+#添加其他元数据
+#在metad中添加数据的方法1
+my_genes <- c("gene_1", "gene_5")
+metadata(sce) <- list(favorite_genes = my_genes)
+
+#2
+your_genes <- c("gene_4", "gene_8")
+metadata(sce)$your_genes <- your_genes
+#筛选列，细胞
+wt.only <- sce[, sce$phenotype == "wild type phenotype"]
+ncol(counts(wt.only))
+colData(wt.only)
+
+# 筛选行 基因
+coding.only <- sce[rowData(sce)$gene_biotype == "protein_coding",]
+nrow(counts(coding.only))     
+rowData(coding.only)
+
+#合并多个对象的列
+sce2 <-  cbind(sce, sce)
+colData(sce2)
+
+#合并多个对象的行
+sce2 <- rbind(sce, sce)
+nrow(counts(sce2))
+
+
+sce <- scater::logNormCounts(sce)
+sce <- scater::runPCA(sce)
+#dim() 函数返回矩阵的维度，格式为 c(细胞数, 主成分数)
+dim(reducedDim(sce, "PCA"))
+#单细胞数据的表达矩阵通常是高维的（比如 10000 个基因 × 5000 个细胞），每个基因都是一个 “维度”。但这些基因的表达并非完全独立（比如功能相关的基因表达模式相似），PCA 的作用就是：
+# 找到少数几个 “综合维度”（主成分），用它们来 “概括” 原始数据的主要信息；
+# 每个主成分都是多个基因表达量的加权组合（权重反映基因对该主成分的贡献度）。
+# 例如：
+# PC1（第一主成分）：是能解释原始数据中最大变异的维度，代表数据中最显著的表达模式（比如细胞间最主要的差异来源，可能是细胞类型差异）；
+# PC2（第二主成分）：解释第二大变异的维度，且与 PC1 不相关（代表另一类独立的表达模式）；
+# 以此类推，PC3、PC4…… 解释的变异程度依次递减。
+# 在单细胞分析中的意义：
+# 降维简化分析：用少数主成分（比如前 20 个）替代上万基因，大幅降低计算复杂度，同时保留核心信息。
+# 去除噪音：PCA 会优先保留变异大的信号（生物学差异），过滤掉变异小的噪音（技术误差）。
+# 可视化基础：后续的 UMAP、t-SNE 等降维可视化通常基于 PCA 结果（而非原始基因），让细胞分群更清晰（比如 PC1-PC2 散点图可初步展示细胞聚类）。
